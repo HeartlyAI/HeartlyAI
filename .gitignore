@@ -6,8 +6,10 @@ venv
 ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.1
 .DS_Store
 
-*AutogluonModels/*
-AutogluonModels/*
+AutogluonModels
+data.csv
+
+
 
 # C extensions
 *.so
