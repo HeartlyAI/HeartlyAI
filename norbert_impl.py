@@ -24,6 +24,21 @@ def ecg_bandpass(data, sampling_freq):
 
 	return butter_bandpass_filter(data, 8, 16, sampling_freq, 5)
 
+def ecg_pass(data, cutoff, sampling_freq, btype):
+	nyquist = sampling_freq / 2
+	cut = cutoff / nyquist
+	b, a = scipy.signal.butter(5, cut, btype=btype)
+	y = scipy.signal.lfilter(b, a, data)
+	return y
+
+def ecg_low_pass(data, lowcut, sampling_freq):
+	y = ecg_pass(data, lowcut, sampling_freq, 'lowpass')
+	return y
+
+def ecg_high_pass(data, highcut, sampling_freq):
+	y = ecg_pass(data, highcut, sampling_freq, 'highpass')
+	return y
+
 def detect_peaks(data, plateu_size=3, min_time_between=30):
 	data_peaks = []
 	n_signals = data.shape[1]
@@ -76,7 +91,9 @@ def ecg_hamilton(data, sampling_freq):
 
 	# Preprocessing Stage
 	# Band-pass filtering
-	filtered = ecg_bandpass(data, sampling_freq)
+	filtered = ecg_low_pass(data, 8, sampling_freq)
+	filtered = ecg_high_pass(filtered, 16, sampling_freq)
+	# filtered = ecg_bandpass(data, sampling_freq)
 	# Derivative
 	derivative = scipy.signal.savgol_filter(filtered, 5, 1)
 	# Absolute
@@ -128,7 +145,7 @@ def ecg_hamilton(data, sampling_freq):
 		threshold = noise_mean+0.3125*(qrs_peak_mean-noise_mean)
 
 		new_peaks = list()
-		shift = mean_size // 2
+		#shift = mean_size // 2
 		lookaround = int(0.2/(1.0/sampling_freq)) # 200ms
 		twave_lookaround = int(0.36/(1.0/sampling_freq)) # 360ms
 		low_index = 0
@@ -145,7 +162,7 @@ def ecg_hamilton(data, sampling_freq):
 
 			low_index += 1
 			if peak_idx is not None:
-				shifted = peak_idx + shift
+				shifted = peak_idx #+ shift
 				
 				prev = None if len(new_peaks) == 0 else new_peaks[-1]
 				if prev != shifted:
