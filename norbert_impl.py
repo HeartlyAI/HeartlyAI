@@ -84,7 +84,7 @@ def ecg_hamilton(data, sampling_freq):
 	# Moving Average (80ms)
 	n_signals = data.shape[1]
 	mean_size = int(0.08/(1.0/sampling_freq))
-	window = np.lib.stride_tricks.sliding_window_view(data, mean_size, axis=0)
+	window = np.lib.stride_tricks.sliding_window_view(filtered, mean_size, axis=0)
 	filtered = np.mean(window, axis=2)
 
 	# Peak Detection
