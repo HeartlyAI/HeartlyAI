@@ -58,3 +58,4 @@ tzdata
 urllib3
 wcwidth
 wfdb
+plotly
