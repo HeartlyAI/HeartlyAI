@@ -12,13 +12,48 @@ from tqdm import tqdm
 from enum import Enum
 
 CACHE_DIR = "./.cache/"
-CACHE_VER = 1
+CACHE_VER = 6
+
+class PTBDataset:
+	__TEST_FOLD = 10
+
+	def __init__(self, x_digital: np.array, x_analog: np.array, y: pd.DataFrame):
+		self.__x_digital = x_digital
+		self.__x_analog = x_analog
+		self.__y = y
+
+	def __type_cond(self, type: str) -> np.array:
+		if type == "train":
+			return self.__y.strat_fold != PTBDataset.__TEST_FOLD
+		elif type == "test":
+			return self.__y.strat_fold == PTBDataset.__TEST_FOLD
+		else:
+			raise ValueError(f"Unexpected type {type}")
+
+	def x(self, type: str, digital: bool):
+		data = self.__x_digital if digital else self.__x_analog
+		return data[np.where(self.__type_cond(type))]
+
+	def y(self, type: str):
+		return self.__y[self.__type_cond(type)]
+
+def record_to_signals(r):
+	return (r.d_signal.astype(np.int16), r.dac())
+
 
 def load_raw_data(df: pd.DataFrame, dataset: str, path: str):
 	filenames = df[f"filename_{dataset}"]
-	data = [wfdb.rdsamp(path+f) for f in tqdm(filenames, desc="Loading data")]
-	data = np.array([signal for signal, meta in data])
-	return data
+	digital = []
+	analog = []
+	for f in tqdm(filenames, desc="Loading data"):
+		record = wfdb.rdrecord(path+f, return_res=16, physical=False)
+		digital.append(record.d_signal)
+		analog.append(record.dac())
+
+	return (
+		np.array(digital).transpose((0,2,1)), 
+		np.array(analog).transpose((0,2,1))
+	)
 
 def aggregate_diagnostic(agg_df, y_dic):
 	tmp = []
@@ -28,7 +63,7 @@ def aggregate_diagnostic(agg_df, y_dic):
 	return list(set(tmp))
 
 
-def load_ptb_xl(path: str, dataset: str) -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
+def load_ptb_xl(path: str, dataset: str) -> PTBDataset:
 	cache_path = os.path.join(CACHE_DIR, f"ptb-xl-v{CACHE_VER}-{dataset}.pkl")
 	try:
 		os.makedirs(CACHE_DIR, exist_ok=True)
@@ -49,7 +84,7 @@ def load_ptb_xl(path: str, dataset: str) -> dict[str, tuple[pd.DataFrame, pd.Dat
 	Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
 
 	# Load raw signal data
-	X = load_raw_data(Y, dataset, path)
+	(X_digital, X_analog) = load_raw_data(Y, dataset, path)
 
 	# Load scp_statements.csv for diagnostic aggregation
 	print("Applying diagnostic data...")
@@ -59,24 +94,12 @@ def load_ptb_xl(path: str, dataset: str) -> dict[str, tuple[pd.DataFrame, pd.Dat
 	# Apply diagnostic superclass
 	Y['diagnostic_superclass'] = Y.scp_codes.apply(lambda x: aggregate_diagnostic(agg_df, x))
 
-	# Split data into train and test
-	test_fold = 10
-	# Train
-	X_train = X[np.where(Y.strat_fold != test_fold)]
-	y_train = Y[(Y.strat_fold != test_fold)].diagnostic_superclass
-	# Test
-	X_test = X[np.where(Y.strat_fold == test_fold)]
-	y_test = Y[Y.strat_fold == test_fold].diagnostic_superclass
-
-	obj = {
-		"train": (X_train, y_train),
-		"test": (X_test, y_test)
-	}
+	dataset = PTBDataset(X_digital, X_analog, Y)
 
 	print("Caching loaded PTB-XL...")
 	with open(cache_path, "wb") as f:
-		f.write(pickle.dumps(obj))
+		f.write(pickle.dumps(dataset))
 	print("PTB-XL loaded!")
 
-	return obj
+	return dataset
 	
