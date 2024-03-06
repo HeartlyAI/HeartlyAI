@@ -5,10 +5,41 @@
 #include <stdbool.h>
 
 #define REFINE_MAX_LOOKBEHIND 8
+#define SIGN(x) ((x > 0) - (x < 0))
 
 int QRSDet(int datum, int init);
 
-size_t *hamilton_detect_qrs(int16_t *data, size_t data_len, size_t *qrs_count) {
+void refine_peaks(int16_t *data, size_t data_len, size_t *peaks, size_t peak_count) {
+	int absmax = 0;
+	int maxsign = 0;
+	for (size_t i = 0; i < data_len; i++) {
+		int absval = abs(data[i]);
+		if (absval > absmax) {
+			absmax = absval;
+			maxsign = SIGN(data[i]);
+		}
+	}
+
+
+	for (size_t i = 0; i < peak_count; i++) {
+		// perform lookaround for local extremum
+		size_t *peak = &peaks[i];
+		size_t lb = *peak - REFINE_MAX_LOOKBEHIND;
+		lb = lb > 1 ? lb : 1;
+		size_t j = *peak;
+		while (j >= lb) {
+			int lgrad = data[j] - data[j-1];
+			int rgrad = data[j + 1] - data[j];
+			if (SIGN(lgrad) != SIGN(rgrad) && maxsign == SIGN(data[j])) {
+				*peak = j;
+				break;
+			}
+			j--;
+		}
+	}
+}
+
+size_t *hamilton_detect_r_peaks(int16_t *data, size_t data_len, size_t *qrs_count) {
 	size_t peaks_len = 16;
 	size_t *peaks = (size_t*)malloc(peaks_len*sizeof(size_t));
 	size_t next_peak_index = 0;
@@ -37,70 +68,123 @@ size_t *hamilton_detect_qrs(int16_t *data, size_t data_len, size_t *qrs_count) {
 	}
 
 	*qrs_count = next_peak_index;
+	refine_peaks(data, data_len, peaks, next_peak_index);
 	return peaks;
 }
 
-void refine_peaks(int16_t *data, size_t data_len, size_t *peaks, size_t peak_count) {
-	for (size_t i = 0; i < peak_count; i++) {
-		// perform lookaround for local maxima
-		size_t *peak = &peaks[i];
-		size_t best_index = *peak;
-		int16_t best_value = data[best_index];
-		size_t lb = best_index - REFINE_MAX_LOOKBEHIND;
-		lb = lb > 0 ? lb : 0;
-		size_t j = best_index - 1;
-		while (j >= lb) {
-			if (data[j] > best_value) {
-				*peak = j;
-				best_index = j;
-				best_value = data[best_index];
+size_t find_local_extrema(int16_t *data, size_t data_len, size_t *peaks, size_t peaks_len, size_t *extrema, size_t extrema_len, int dir) {
+	size_t extrema_index = 0;
+	for (size_t i = 0; i < peaks_len; i++) {
+		size_t peak = peaks[i];
+
+		int prev_value = data[peak];
+		int prev_gradient_sign = 0;
+		int gradient_sign;
+		ssize_t found_extrema = -1;
+		for (size_t j = peak + dir; ; j += dir) {
+			if (dir == -1 && j == 0) break;
+			if (dir == 1 && j == data_len - 1) break;
+			int gradient = data[j] - prev_value;
+ 			gradient_sign = SIGN(gradient);
+			if (gradient_sign != prev_gradient_sign && prev_gradient_sign != 0) {
+				found_extrema = j;
+				break;
 			}
-			j--;
+			prev_gradient_sign = gradient_sign;
+			prev_value = data[j];
+		}
+		if (found_extrema != -1) {
+			if (extrema_index >= extrema_len) {
+				printf("AMOGUS");
+				return 0;
+			}
+			extrema[extrema_index] = found_extrema;
+			extrema_index++;
 		}
 	}
+	return extrema_index;
 }
 
-static PyObject* detect_r_peaks(PyObject *self, PyObject *args) {
+bool from_args_1d_int16_numpy_array(PyObject *args, npy_int16 **data, npy_intp *data_len) {
 	PyObject *input_array;
 
 	if (!PyArg_ParseTuple(args, "O", &input_array) || !PyArray_Check(input_array)) {
 		PyErr_SetString(PyExc_TypeError, "Expected a single numpy array as argument.");
-		return NULL;
+		return false;
 	}
 
 	PyArrayObject *np_array = (PyArrayObject*)PyArray_FROM_OTF(input_array, NPY_INT16, NPY_ARRAY_IN_ARRAY);
 	if (!np_array) {
 		PyErr_SetString(PyExc_ValueError, "The numpy array must be of dtype int16.");
-		return NULL;
+		return false;
 	}
 
 	if (PyArray_NDIM(np_array) != 1) {
 		PyErr_SetString(PyExc_ValueError, "The numpy array must be 1d.");
-		return NULL;
+		return false;
 	}
 
-	npy_int16 *data = (npy_int16*)PyArray_DATA(np_array);
-	npy_intp data_len = PyArray_SIZE(np_array);
+	*data = (npy_int16*)PyArray_DATA(np_array);
+	*data_len = PyArray_SIZE(np_array);
+	return true;
+}
+
+PyObject* indices_to_PyList(size_t *indices, size_t indices_len) {
+	PyObject *py_list = PyList_New(indices_len);
+	if (!py_list) return NULL;
+	for (size_t i = 0; i < indices_len; i++) {
+		PyObject *p = PyLong_FromUnsignedLong(indices[i]);
+		PyList_SET_ITEM(py_list, i, p);
+	}
+	return py_list;
+}
+
+static PyObject* detect_r_peaks(PyObject *self, PyObject *args) {
+	npy_int16 *data;
+	npy_intp data_len;
+	if (!from_args_1d_int16_numpy_array(args, &data, &data_len)) return NULL;
 
 	size_t peak_count;
-	size_t *peaks = hamilton_detect_qrs(data, data_len, &peak_count);
-	refine_peaks(data, data_len, peaks, peak_count);
+	size_t *peaks = hamilton_detect_r_peaks(data, data_len, &peak_count);
 
-	PyObject *py_peaks = PyList_New(peak_count);
-	if (!py_peaks) return NULL;
-	for (size_t i = 0; i < peak_count; i++) {
-		PyObject *p = PyLong_FromUnsignedLong(peaks[i]);
-		PyList_SET_ITEM(py_peaks, i, p);
-	}
+	PyObject *py_peaks = indices_to_PyList(peaks, peak_count);
 
 	free(peaks);
-	
 	return py_peaks;
 }
 
+static PyObject *detect_qrs(PyObject *self, PyObject *args) {
+	npy_int16 *data;
+	npy_intp data_len;
+	if (!from_args_1d_int16_numpy_array(args, &data, &data_len)) return NULL;
+
+	size_t peak_count;
+	size_t *r = hamilton_detect_r_peaks(data, data_len, &peak_count);
+	size_t *q = (size_t*)malloc(sizeof(size_t)*peak_count);
+	size_t *s = (size_t*)malloc(sizeof(size_t)*peak_count);
+	size_t q_count = find_local_extrema(data, data_len, r, peak_count, q, peak_count, -1);
+	size_t s_count = find_local_extrema(data, data_len, r, peak_count, s, peak_count, 1);
+	
+	PyObject *py_list = PyList_New(3);
+	PyObject *py_q = indices_to_PyList(q, q_count);
+	PyObject *py_r = indices_to_PyList(r, peak_count);
+	PyObject *py_s = indices_to_PyList(s, s_count);
+	PyList_SET_ITEM(py_list, 0, py_q);
+	PyList_SET_ITEM(py_list, 1, py_r);
+	PyList_SET_ITEM(py_list, 2, py_s);
+
+	free(s);
+	free(q);
+	free(r);
+
+	return py_list;
+}
+
+
 static PyMethodDef methods[] = {
-    {"detect_r_peaks", detect_r_peaks, METH_VARARGS, "This method detects all QRS complexes within a numpy array."},
-    {NULL, NULL, 0, NULL} // Sentinel
+    {"detect_r_peaks", detect_r_peaks, METH_VARARGS, "This method detects all R peaks within a numpy array."},
+    {"detect_qrs", detect_qrs, METH_VARARGS, "This method detects all QRS complexes within a numpy array."},
+	{NULL, NULL, 0, NULL} // Sentinel
 };
 
 
