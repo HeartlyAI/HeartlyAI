@@ -4,7 +4,7 @@
 #include "qrsdet.h"
 #include <stdbool.h>
 
-#define REFINE_MAX_LOOKBEHIND 16
+#define REFINE_MAX_LOOKBEHIND 8
 
 int QRSDet(int datum, int init);
 
@@ -49,10 +49,12 @@ void refine_peaks(int16_t *data, size_t data_len, size_t *peaks, size_t peak_cou
 		size_t lb = best_index - REFINE_MAX_LOOKBEHIND;
 		lb = lb > 0 ? lb : 0;
 		size_t j = best_index - 1;
-		while (j >= lb && data[j] > best_value) {
-			*peak = j;
-			best_index = j;
-			best_value = data[best_index];
+		while (j >= lb) {
+			if (data[j] > best_value) {
+				*peak = j;
+				best_index = j;
+				best_value = data[best_index];
+			}
 			j--;
 		}
 	}
