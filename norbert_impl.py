@@ -13,10 +13,11 @@ y_train = dataset.y("train")
 
 
 print(X_train_digital.shape)
-#start = time.monotonic()
-#l = preprocessing.r_peaks_hamilton(X_train_digital)
 
-#print(f"Preprocessed in {time.monotonic() - start}s")
+start = time.monotonic()
+l = preprocessing.qrs_hamilton(X_train_digital)
+
+print(f"Preprocessed in {time.monotonic() - start}s")
 
 data = X_train_digital[4]
 signal = 0

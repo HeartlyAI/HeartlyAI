@@ -77,26 +77,22 @@ size_t find_local_extrema(int16_t *data, size_t data_len, size_t *peaks, size_t 
 	for (size_t i = 0; i < peaks_len; i++) {
 		size_t peak = peaks[i];
 
-		int prev_value = data[peak];
 		int prev_gradient_sign = 0;
-		int gradient_sign;
 		ssize_t found_extrema = -1;
-		for (size_t j = peak + dir; ; j += dir) {
-			if (dir == -1 && j == 0) break;
-			if (dir == 1 && j == data_len - 1) break;
-			int gradient = data[j] - prev_value;
- 			gradient_sign = SIGN(gradient);
+		size_t bound = dir < 0 ? 0 : data_len - 1;
+		for (size_t j = peak + dir; j != bound ; j += dir) {
+			int gradient = data[j] - data[j - dir];
+ 			int gradient_sign = SIGN(gradient);
 			if (gradient_sign != prev_gradient_sign && prev_gradient_sign != 0) {
-				found_extrema = j;
+				found_extrema = j - dir;
 				break;
 			}
 			prev_gradient_sign = gradient_sign;
-			prev_value = data[j];
 		}
 		if (found_extrema != -1) {
 			if (extrema_index >= extrema_len) {
-				printf("AMOGUS");
-				return 0;
+				printf("RAN OUT OF EXTREMA SPACE\n");
+				return extrema_index;
 			}
 			extrema[extrema_index] = found_extrema;
 			extrema_index++;
