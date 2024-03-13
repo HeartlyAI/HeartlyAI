@@ -9,7 +9,7 @@
 
 int QRSDet(int datum, int init);
 
-void refine_peaks(int16_t *data, size_t data_len, size_t *peaks, size_t peak_count) {
+void refine_peaks(int16_t *data, size_t data_len, ssize_t *peaks, size_t peak_count) {
 	int absmax = 0;
 	int maxsign = 0;
 	for (size_t i = 0; i < data_len; i++) {
@@ -23,7 +23,9 @@ void refine_peaks(int16_t *data, size_t data_len, size_t *peaks, size_t peak_cou
 
 	for (size_t i = 0; i < peak_count; i++) {
 		// perform lookaround for local extremum
-		size_t *peak = &peaks[i];
+		ssize_t *peak = &peaks[i];
+		if (*peak == -1) continue;
+
 		size_t lb = *peak - REFINE_MAX_LOOKBEHIND;
 		lb = lb > 1 ? lb : 1;
 		size_t j = *peak;
@@ -39,9 +41,9 @@ void refine_peaks(int16_t *data, size_t data_len, size_t *peaks, size_t peak_cou
 	}
 }
 
-size_t *hamilton_detect_r_peaks(int16_t *data, size_t data_len, size_t *qrs_count) {
+ssize_t *hamilton_detect_r_peaks(int16_t *data, ssize_t data_len, size_t *qrs_count) {
 	size_t peaks_len = 16;
-	size_t *peaks = (size_t*)malloc(peaks_len*sizeof(size_t));
+	ssize_t *peaks = (ssize_t*)malloc(peaks_len*sizeof(ssize_t));
 	size_t next_peak_index = 0;
 	if (!peaks) return NULL;
 
@@ -55,7 +57,7 @@ size_t *hamilton_detect_r_peaks(int16_t *data, size_t data_len, size_t *qrs_coun
 		if (delay) {
 			if (next_peak_index >= peaks_len) {
 				peaks_len *= 2;
-				peaks = (size_t*)realloc(peaks, peaks_len*sizeof(size_t));
+				peaks = (ssize_t*)realloc(peaks, peaks_len*sizeof(ssize_t));
 				if (!peaks) return NULL;
 			}
 			int data_index = i - delay;
@@ -72,11 +74,13 @@ size_t *hamilton_detect_r_peaks(int16_t *data, size_t data_len, size_t *qrs_coun
 	return peaks;
 }
 
-size_t find_local_extrema(int16_t *data, size_t data_len, size_t *peaks, size_t peaks_len, size_t *extrema, size_t extrema_len, int dir) {
-	size_t extrema_index = 0;
+void find_local_extrema(int16_t *data, size_t data_len, ssize_t *peaks, size_t peaks_len, ssize_t *extrema, int dir) {
 	for (size_t i = 0; i < peaks_len; i++) {
-		size_t peak = peaks[i];
-
+		ssize_t peak = peaks[i];
+		if (peak == -1) {
+			extrema[i] = -1;
+			continue;
+		}
 		int prev_gradient_sign = 0;
 		ssize_t found_extrema = -1;
 		size_t bound = dir < 0 ? 0 : data_len - 1;
@@ -89,16 +93,8 @@ size_t find_local_extrema(int16_t *data, size_t data_len, size_t *peaks, size_t 
 			}
 			prev_gradient_sign = gradient_sign;
 		}
-		if (found_extrema != -1) {
-			if (extrema_index >= extrema_len) {
-				printf("RAN OUT OF EXTREMA SPACE\n");
-				return extrema_index;
-			}
-			extrema[extrema_index] = found_extrema;
-			extrema_index++;
-		}
+		extrema[i] = found_extrema;
 	}
-	return extrema_index;
 }
 
 bool from_args_1d_int16_numpy_array(PyObject *args, npy_int16 **data, npy_intp *data_len) {
@@ -125,11 +121,11 @@ bool from_args_1d_int16_numpy_array(PyObject *args, npy_int16 **data, npy_intp *
 	return true;
 }
 
-PyObject* indices_to_PyList(size_t *indices, size_t indices_len) {
+PyObject* indices_to_PyList(ssize_t *indices, size_t indices_len) {
 	PyObject *py_list = PyList_New(indices_len);
 	if (!py_list) return NULL;
 	for (size_t i = 0; i < indices_len; i++) {
-		PyObject *p = PyLong_FromUnsignedLong(indices[i]);
+		PyObject *p = PyLong_FromLongLong(indices[i]);
 		PyList_SET_ITEM(py_list, i, p);
 	}
 	return py_list;
@@ -141,7 +137,7 @@ static PyObject* detect_r_peaks(PyObject *self, PyObject *args) {
 	if (!from_args_1d_int16_numpy_array(args, &data, &data_len)) return NULL;
 
 	size_t peak_count;
-	size_t *peaks = hamilton_detect_r_peaks(data, data_len, &peak_count);
+	ssize_t *peaks = hamilton_detect_r_peaks(data, data_len, &peak_count);
 
 	PyObject *py_peaks = indices_to_PyList(peaks, peak_count);
 
@@ -155,16 +151,16 @@ static PyObject *detect_qrs(PyObject *self, PyObject *args) {
 	if (!from_args_1d_int16_numpy_array(args, &data, &data_len)) return NULL;
 
 	size_t peak_count;
-	size_t *r = hamilton_detect_r_peaks(data, data_len, &peak_count);
-	size_t *q = (size_t*)malloc(sizeof(size_t)*peak_count);
-	size_t *s = (size_t*)malloc(sizeof(size_t)*peak_count);
-	size_t q_count = find_local_extrema(data, data_len, r, peak_count, q, peak_count, -1);
-	size_t s_count = find_local_extrema(data, data_len, r, peak_count, s, peak_count, 1);
+	ssize_t *r = hamilton_detect_r_peaks(data, data_len, &peak_count);
+	ssize_t *q = (ssize_t*)malloc(sizeof(ssize_t)*peak_count);
+	ssize_t *s = (ssize_t*)malloc(sizeof(ssize_t)*peak_count);
+	find_local_extrema(data, data_len, r, peak_count, q, -1);
+	find_local_extrema(data, data_len, r, peak_count, s, 1);
 	
 	PyObject *py_list = PyList_New(3);
-	PyObject *py_q = indices_to_PyList(q, q_count);
+	PyObject *py_q = indices_to_PyList(q, peak_count);
 	PyObject *py_r = indices_to_PyList(r, peak_count);
-	PyObject *py_s = indices_to_PyList(s, s_count);
+	PyObject *py_s = indices_to_PyList(s, peak_count);
 	PyList_SET_ITEM(py_list, 0, py_q);
 	PyList_SET_ITEM(py_list, 1, py_r);
 	PyList_SET_ITEM(py_list, 2, py_s);

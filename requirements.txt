@@ -59,3 +59,4 @@ urllib3
 wcwidth
 wfdb
 plotly
+autogluon

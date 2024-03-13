@@ -10,8 +10,8 @@ import pickle
 import os
 from tqdm import tqdm
 from enum import Enum
+from util import Spinner, Cache
 
-CACHE_DIR = "./.cache/"
 CACHE_VER = 6
 
 class PTBDataset:
@@ -30,11 +30,11 @@ class PTBDataset:
 		else:
 			raise ValueError(f"Unexpected type {type}")
 
-	def x(self, type: str, digital: bool):
+	def x(self, type: str, digital: bool) -> np.array:
 		data = self.__x_digital if digital else self.__x_analog
 		return data[np.where(self.__type_cond(type))]
 
-	def y(self, type: str):
+	def y(self, type: str) -> pd.DataFrame:
 		return self.__y[self.__type_cond(type)]
 
 def record_to_signals(r):
@@ -64,42 +64,35 @@ def aggregate_diagnostic(agg_df, y_dic):
 
 
 def load_ptb_xl(path: str, dataset: str) -> PTBDataset:
-	cache_path = os.path.join(CACHE_DIR, f"ptb-xl-v{CACHE_VER}-{dataset}.pkl")
-	try:
-		os.makedirs(CACHE_DIR, exist_ok=True)
-		with open(cache_path, "rb") as f:
-			print("Loading PTB-XL from cache...")
-			obj = pickle.loads(f.read())
-			print("PTB-XL loaded from cache!")
-			return obj
-	except FileNotFoundError:
-		print("Cached PTB-XL not found.")
-		pass
-		
+	cache = Cache[int](f"ptb-xl-{dataset}", CACHE_VER)
+	with Spinner("Loading PTB-XL from cache"):
+		obj = cache.try_load()
+	if obj is not None:
+		return obj
+	else:
+		print("Cached PTB-XL not found")
 
 	# load and convert annotation data
-	print("Loading csv...")
-	Y = pd.read_csv(path+'ptbxl_database.csv', index_col='ecg_id')
-	print("Converting annotation data...")
-	Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
+	with Spinner("Loading csv"):
+		Y = pd.read_csv(path+'ptbxl_database.csv', index_col='ecg_id')
+	with Spinner("Converting annotation data"):
+		Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
 
 	# Load raw signal data
 	(X_digital, X_analog) = load_raw_data(Y, dataset, path)
 
 	# Load scp_statements.csv for diagnostic aggregation
-	print("Applying diagnostic data...")
-	agg_df = pd.read_csv(path+'scp_statements.csv', index_col=0)
-	agg_df = agg_df[agg_df.diagnostic == 1]
+	with Spinner("Applying diagnostic data"):
+		agg_df = pd.read_csv(path+'scp_statements.csv', index_col=0)
+		agg_df = agg_df[agg_df.diagnostic == 1]
 
 	# Apply diagnostic superclass
 	Y['diagnostic_superclass'] = Y.scp_codes.apply(lambda x: aggregate_diagnostic(agg_df, x))
 
 	dataset = PTBDataset(X_digital, X_analog, Y)
 
-	print("Caching loaded PTB-XL...")
-	with open(cache_path, "wb") as f:
-		f.write(pickle.dumps(dataset))
-	print("PTB-XL loaded!")
+	with Spinner("Caching loaded PTB-XL"):
+		cache.save(dataset)
 
 	return dataset
 	
