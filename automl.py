@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from util import Spinner, cached
 from tqdm import tqdm
+import argparse
+from os import path
 from autogluon.tabular import TabularDataset, TabularPredictor
 
 QRSList = List[List[List[List[int]]]]
@@ -126,27 +128,33 @@ def tabulate(y_df: pd.DataFrame, x_lead_features: List[List[LeadFeatures]]) -> T
 	y = pd.DataFrame(data={
 		"is_normal": map(lambda x: "NORM" in x, y_df["diagnostic_superclass"]),
 	})
-
+	
 	return x, y
 
 
-def train_model(train_data):
-	predictor = TabularPredictor(label="is_normal").fit(
-		train_data,
-		# ag_args_fit={"num_gpus":1},
-		presets = "best_quality",
-		time_limit = 60*30,
-		auto_stack = True,
-		dynamic_stacking = False,
-		num_stack_levels = None,
-		num_bag_folds = None,
-		num_bag_sets = None,
-		excluded_model_types = ["KNN"]
-	)
+def automl_model(train_data: pd.DataFrame, file: str) -> TabularPredictor:
+	if file is not None and path.exists(file):
+		print(f"AutoGluon predictor {file} already exists - loading from file")
+		return TabularPredictor.load(file)
+	else:
+		print(f"Training AutoGluon predictor {file}...")
+		return TabularPredictor(label="is_normal").fit(
+			train_data,
+			presets = "best_quality",
+			time_limit = 60,
+			auto_stack = True,
+			dynamic_stacking = False,
+			num_stack_levels = None,
+			num_bag_folds = None,
+			num_bag_sets = None,
+			excluded_model_types = ["KNN"],
+			ag_args_fit={
+				"num_cpus": 14,
+				"num_gpus": 1
+			}
+		)
 
-	return predictor
-
-def preprocess(ptb: PTBDataset, data_type: str):
+def get_data(ptb: PTBDataset, data_type: str):
 	with Spinner(f"QRS Detection {data_type}"):
 		qrs = cached(f"hamilton_{data_type}", 2, lambda: qrs_hamilton(ptb.x(data_type, True)))
 
@@ -155,18 +163,24 @@ def preprocess(ptb: PTBDataset, data_type: str):
 	x, y = tabulate(ptb.y(data_type), qrs_features)
 	return pd.concat([x, y], axis=1)
 
-
-def main():
+def run(file: str):
 	ptb = load_ptb_xl("./ptb-xl/", "lr")
 	
-	train_data = preprocess(ptb, "train")
-	test_data = preprocess(ptb, "test")
+	train_data = get_data(ptb, "train")
+	test_data = get_data(ptb, "test")
 
-	predictor = train_model(train_data)
+	predictor = automl_model(train_data, file)
 
-	result = predictor.evaluate(test_data)
-	print(result)
-	return
+	print("=== LEADERBOARD ===")
+	print(predictor.leaderboard(test_data))
+	print("=== EVALUATE ===")
+	print(predictor.evaluate(test_data, detailed_report=True))
+
+def main():
+	parser = argparse.ArgumentParser(prog="Hearly AutoML")
+	parser.add_argument("-f", "--file")
+	args = parser.parse_args()
+	run(file=args.file)
 
 if __name__ == "__main__":
 	main()
