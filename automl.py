@@ -133,6 +133,7 @@ def tabulate(y_df: pd.DataFrame, x_lead_features: List[List[LeadFeatures]]) -> T
 def train_model(train_data):
 	predictor = TabularPredictor(label="is_normal").fit(
 		train_data,
+		# ag_args_fit={"num_gpus":1},
 		presets = "best_quality",
 		time_limit = 60*30,
 		auto_stack = True,
@@ -145,19 +146,27 @@ def train_model(train_data):
 
 	return predictor
 
+def preprocess(ptb: PTBDataset, data_type: str):
+	with Spinner(f"QRS Detection {data_type}"):
+		qrs = cached(f"hamilton_{data_type}", 2, lambda: qrs_hamilton(ptb.x(data_type, True)))
+
+	qrs_features = cached(f"feature_extract_{data_type}", 1, lambda: __extract_features(ptb.x(data_type, False), qrs))
+
+	x, y = tabulate(ptb.y(data_type), qrs_features)
+	return pd.concat([x, y], axis=1)
+
 
 def main():
 	ptb = load_ptb_xl("./ptb-xl/", "lr")
-	with Spinner("QRS Detection"):
-		qrs = cached("hamilton", 2, lambda: qrs_hamilton(ptb.x("train", True)))
-
-	qrs_features = cached("feature_extract", 1, lambda: __extract_features(ptb.x("train", False), qrs))
 	
-	x, y = tabulate(ptb.y("train"), qrs_features)
-	predictor = train_model(pd.concat([x, y], axis=1))
-	# predictor.evaluate(test_data)
-	print("Gabagooye")
-	pass
+	train_data = preprocess(ptb, "train")
+	test_data = preprocess(ptb, "test")
+
+	predictor = train_model(train_data)
+
+	result = predictor.evaluate(test_data)
+	print(result)
+	return
 
 if __name__ == "__main__":
 	main()
