@@ -1,7 +1,8 @@
 from typing import List, Optional, Tuple
 from preprocessing import qrs_hamilton
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from ptb_loader import PTBDataset, load_ptb_xl
+from itertools import combinations
 import time
 import threading
 import numpy as np
@@ -9,16 +10,6 @@ import pandas as pd
 from util import Spinner, cached
 from tqdm import tqdm
 from autogluon.tabular import TabularDataset, TabularPredictor
-
-label = 'is_norm'
-presets = 'best_quality'
-time_limit = 60*30
-auto_stack = True
-dynamic_stacking = False
-num_stack_levels = None
-num_bag_folds = None
-num_bag_sets = None
-excluded_model_types = ["KNN"]
 
 QRSList = List[List[List[List[int]]]]
 
@@ -84,16 +75,16 @@ def __extract_lead_features(data: np.array, lead: List[List[int]]) -> LeadFeatur
 
 	if (len(q) == 0):
 		return LeadFeatures(
-			rr_average_x=float('NaN'),
-			rr_variance_x=float('NaN'),
-			qr_average_y=float('NaN'),
-			qr_variance_y=float('NaN'),
-			rs_average_y=float('NaN'),
-			rs_variance_y=float('NaN'),
-			qs_average_x=float('NaN'),
-			qs_variance_x=float('NaN'),
-			gr_average_y=float('NaN'),
-			gr_variance_y=float('NaN'),
+			rr_average_x=0,
+			rr_variance_x=0,
+			qr_average_y=0,
+			qr_variance_y=0,
+			rs_average_y=0,
+			rs_variance_y=0,
+			qs_average_x=0,
+			qs_variance_x=0,
+			gr_average_y=0,
+			gr_variance_y=0,
 		)
 	
 	# Calculate features for the current lead
@@ -119,33 +110,37 @@ def __extract_lead_features(data: np.array, lead: List[List[int]]) -> LeadFeatur
 		gr_variance_y=np.var(gr_delta_y),
 	)
 
-def tabulate(ptb: PTBDataset, x_lead_features: List[List[LeadFeatures]]):
-	X_train = ptb.x("train", False)
-	Y_train = ptb.y("train")
-	#print(set(Y_train["diagnostic_superclass"].to_numpy()))
-	df = pd.DataFrame(data={
-		"normal": map(lambda x: "NORM" in x, Y_train["diagnostic_superclass"]),
+def tabulate(y_df: pd.DataFrame, x_lead_features: List[List[LeadFeatures]]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+	names = [f.name for f in fields(LeadFeatures)]
+	data = {}
+	for lead in range(12):
+		for name in names:
+			data[f"lead_{lead}_{name}"] = np.zeros(len(x_lead_features))
+	
+	for i, patient in enumerate(x_lead_features):
+		for j, lead in enumerate(patient):
+			for name in names:
+				data[f"lead_{j}_{name}"][i] = getattr(lead, name)
+	
+	x = pd.DataFrame(data=data)
+	y = pd.DataFrame(data={
+		"is_normal": map(lambda x: "NORM" in x, y_df["diagnostic_superclass"]),
 	})
-	print(df)
-	exit(0)
-	df = Y_train.copy()
-	print(df.iloc[0])
-	exit(0)
 
-	# Add result columns to the expected output dataset
+	return x, y
 
 
 def train_model(train_data):
-	predictor = TabularPredictor(label=label).fit(
+	predictor = TabularPredictor(label="is_normal").fit(
 		train_data,
-		time_limit=time_limit, 
-		presets=presets, 
-		auto_stack=auto_stack, 
-		num_stack_levels=num_stack_levels,
-		num_bag_folds=num_bag_folds, 
-		num_bag_sets=num_bag_sets, 
-		excluded_model_types=excluded_model_types, 
-		dynamic_stacking=dynamic_stacking
+		presets = "best_quality",
+		time_limit = 60*30,
+		auto_stack = True,
+		dynamic_stacking = False,
+		num_stack_levels = None,
+		num_bag_folds = None,
+		num_bag_sets = None,
+		excluded_model_types = ["KNN"]
 	)
 
 	return predictor
@@ -158,8 +153,8 @@ def main():
 
 	qrs_features = cached("feature_extract", 1, lambda: __extract_features(ptb.x("train", False), qrs))
 	
-	train_data = tabulate(ptb, qrs_features)
-	predictor = train_model(train_data)
+	x, y = tabulate(ptb.y("train"), qrs_features)
+	predictor = train_model(pd.concat([x, y], axis=1))
 	# predictor.evaluate(test_data)
 	print("Gabagooye")
 	pass

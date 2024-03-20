@@ -26,7 +26,6 @@ class Spinner:
 	
 	def __spinner_loop(self):
 		if sys.stdout.isatty():
-			print("")
 			i = 0
 			while not self.__done.is_set():
 				spinner = Spinner.SPINNER[i]
@@ -71,5 +70,5 @@ def cached(id: str, version: int, fn: Callable[[], T]) -> T:
 	value = cache.try_load()
 	if value is None:
 		value = fn()
-	cache.save(value)
+		cache.save(value)
 	return value
