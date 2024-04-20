@@ -77,16 +77,16 @@ def __extract_lead_features(data: np.array, lead: List[List[int]]) -> LeadFeatur
 
 	if (len(q) == 0):
 		return LeadFeatures(
-			rr_average_x=0,
-			rr_variance_x=0,
-			qr_average_y=0,
-			qr_variance_y=0,
-			rs_average_y=0,
-			rs_variance_y=0,
-			qs_average_x=0,
-			qs_variance_x=0,
-			gr_average_y=0,
-			gr_variance_y=0,
+			rr_average_x=float("NaN"),
+			rr_variance_x=float("NaN"),
+			qr_average_y=float("NaN"),
+			qr_variance_y=float("NaN"),
+			rs_average_y=float("NaN"),
+			rs_variance_y=float("NaN"),
+			qs_average_x=float("NaN"),
+			qs_variance_x=float("NaN"),
+			gr_average_y=float("NaN"),
+			gr_variance_y=float("NaN"),
 		)
 	
 	# Calculate features for the current lead
@@ -112,10 +112,10 @@ def __extract_lead_features(data: np.array, lead: List[List[int]]) -> LeadFeatur
 		gr_variance_y=np.var(gr_delta_y),
 	)
 
-def tabulate(y_df: pd.DataFrame, x_lead_features: List[List[LeadFeatures]]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def tabulate(y_df: pd.DataFrame, x_lead_features: List[List[LeadFeatures]], leads: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
 	names = [f.name for f in fields(LeadFeatures)]
 	data = {}
-	for lead in range(12):
+	for lead in range(leads):
 		for name in names:
 			data[f"lead_{lead}_{name}"] = np.zeros(len(x_lead_features))
 	
@@ -141,33 +141,39 @@ def automl_model(train_data: pd.DataFrame, file: str) -> TabularPredictor:
 		return TabularPredictor(label="is_normal").fit(
 			train_data,
 			presets = "best_quality",
-			time_limit = 60,
-			auto_stack = True,
-			dynamic_stacking = False,
-			num_stack_levels = None,
-			num_bag_folds = None,
-			num_bag_sets = None,
-			excluded_model_types = ["KNN"],
+			#time_limit = 60,
+			# PREV 6lead 10min: 'accuracy': 0.7662278710848842,
+			# PREV 12lead bq 10min: 'accuracy': 0.7807535179300953,
+			# PREV 12lead bq 30min: 'accuracy': 0.7839310031774852,
+			# PREV 12lead gq 30min: 'accuracy': 0.7871084884248751
+			#auto_stack = True,
+			#dynamic_stacking = True,
+			#num_stack_levels = None,
+			#num_bag_folds = None,
+			#num_bag_sets = None,
+			#excluded_model_types = ["KNN"],
 			ag_args_fit={
-				"num_cpus": 14,
-				"num_gpus": 1
+				"num_cpus": 16,
+				"num_gpus": 0
 			}
 		)
 
-def get_data(ptb: PTBDataset, data_type: str):
-	with Spinner(f"QRS Detection {data_type}"):
-		qrs = cached(f"hamilton_{data_type}", 2, lambda: qrs_hamilton(ptb.x(data_type, True)))
+def get_data(ptb: PTBDataset, data_type: str, leads: int):
+	def extract():
+		with Spinner(f"QRS Detection {data_type}"):
+			qrs = qrs_hamilton(ptb.x(data_type, True)[:,:leads,:])
+		return __extract_features(ptb.x(data_type, False)[:,:leads], qrs)
+	
+	qrs_features = cached(f"data_{data_type}_{leads}", 1, extract)
 
-	qrs_features = cached(f"feature_extract_{data_type}", 1, lambda: __extract_features(ptb.x(data_type, False), qrs))
-
-	x, y = tabulate(ptb.y(data_type), qrs_features)
+	x, y = tabulate(ptb.y(data_type), qrs_features, leads)
 	return pd.concat([x, y], axis=1)
 
-def run(file: str):
+def run(file: str, leads: int):
 	ptb = load_ptb_xl("./ptb-xl/", "lr")
 	
-	train_data = get_data(ptb, "train")
-	test_data = get_data(ptb, "test")
+	train_data = get_data(ptb, "train", leads)
+	test_data = get_data(ptb, "test", leads)
 
 	predictor = automl_model(train_data, file)
 
@@ -179,8 +185,9 @@ def run(file: str):
 def main():
 	parser = argparse.ArgumentParser(prog="Hearly AutoML")
 	parser.add_argument("-f", "--file")
+	parser.add_argument("-l", "--leads", default=12, type=int)
 	args = parser.parse_args()
-	run(file=args.file)
+	run(file=args.file, leads=args.leads)
 
 if __name__ == "__main__":
 	main()

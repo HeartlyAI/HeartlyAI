@@ -32,7 +32,7 @@ class Spinner:
 				print(f"\r{self.text} {spinner} ", end="")
 				i = (i + 1) % len(Spinner.SPINNER)
 				self.__done.wait(0.1)
-			duration = round(time.monotonic() - self.__start_time, 3)
+		duration = round(time.monotonic() - self.__start_time, 3)
 		print(f"\r{self.text} in {duration}s")
 
 	def __enter__(self):

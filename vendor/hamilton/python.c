@@ -6,6 +6,8 @@
 
 #define REFINE_MAX_LOOKBEHIND 8
 #define SIGN(x) ((x > 0) - (x < 0))
+#define MAX(a, b) (a > b ? a : b)
+#define MIN(a, b) (a < b ? a : b)
 
 int QRSDet(int datum, int init);
 
@@ -83,8 +85,9 @@ void find_local_extrema(int16_t *data, size_t data_len, ssize_t *peaks, size_t p
 		}
 		int prev_gradient_sign = 0;
 		ssize_t found_extrema = -1;
+		size_t start = dir < 0 ? MAX(peak + dir, 0) : MIN(peak + dir, data_len - 1);
 		size_t bound = dir < 0 ? 0 : data_len - 1;
-		for (size_t j = peak + dir; j != bound ; j += dir) {
+		for (size_t j = start; j != bound ; j += dir) {
 			int gradient = data[j] - data[j - dir];
  			int gradient_sign = SIGN(gradient);
 			if (gradient_sign != prev_gradient_sign && prev_gradient_sign != 0) {
