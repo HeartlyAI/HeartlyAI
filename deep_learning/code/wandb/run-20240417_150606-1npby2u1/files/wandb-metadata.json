@@ -1,0 +1,37 @@
+{
+    "os": "macOS-14.4.1-arm64-arm-64bit",
+    "python": "3.12.2",
+    "heartbeatAt": "2024-04-17T13:06:07.411790",
+    "startedAt": "2024-04-17T13:06:06.726652",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/Users/jorgensandhaug/Documents/github_documents/ecg_ptbxl_benchmarking/code/reproduce_results.py",
+    "codePathLocal": "reproduce_results.py",
+    "codePath": "code/reproduce_results.py",
+    "git": {
+        "remote": "git@github.com:HeartlyAI/ecg_ptbxl_benchmarking.git",
+        "commit": "4b76c5ed3e37d2abf3d53e4a0582d3b95dca0d93"
+    },
+    "email": "jorgen.sandhaug@gmail.com",
+    "root": "/Users/jorgensandhaug/Documents/github_documents/ecg_ptbxl_benchmarking",
+    "host": "dhcp-10-22-166-104.wlan.ntnu.no",
+    "username": "jorgensandhaug",
+    "executable": "/opt/homebrew/anaconda3/envs/ecg2/bin/python3",
+    "cpu_count": 8,
+    "cpu_count_logical": 8,
+    "disk": {
+        "/": {
+            "total": 460.4317207336426,
+            "used": 397.9854202270508
+        }
+    },
+    "gpuapple": {
+        "type": "arm",
+        "vendor": "Apple"
+    },
+    "memory": {
+        "total": 16.0
+    }
+}

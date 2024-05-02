@@ -1,0 +1,8 @@
+pandas
+fastai==1.0.61
+tqdm
+wfdb
+scikit-learn
+scikit-image
+onnxruntime
+torchvision==0.17.1

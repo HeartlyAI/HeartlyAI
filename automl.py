@@ -178,7 +178,7 @@ def parse_leads(l: str) -> Tuple[int, int]:
 		tup = (0, int(split[0]))
 	elif len(split) == 2:
 		tup = (int(split[0]) - 1, int(split[1]))
-	if tup[0] < 0 or tup[1] < 0 or tup[0] >= 12 or tup[1] >= 12:
+	if tup[0] < 0 or tup[1] < 0 or tup[0] > 12 or tup[1] > 12:
 		print("Leads must be in range 0:0 to 12:12")
 		exit(1)
 	return tup
